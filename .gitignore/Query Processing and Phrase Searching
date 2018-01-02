@@ -1,0 +1,517 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package crawl;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+    import java.sql.ResultSet;
+import java.sql.SQLException;
+    import java.util.*;
+    import java.io.BufferedReader;
+    import java.io.BufferedWriter;
+    import java.io.FileWriter;
+    import java.io.FileReader;
+    import java.io.IOException;
+    import java.io.File;
+    import java.io.FileInputStream;
+    import java.util.ArrayList;
+    import java.util.Scanner;
+    import org.jsoup.Connection;
+    import org.jsoup.Jsoup;
+    import org.jsoup.nodes.Document;
+    import org.jsoup.select.Elements;
+    import org.jsoup.nodes.Element;
+    import java.util.HashMap;
+    import java.util.Map;
+    import java.util.Arrays;
+    import java.util.HashSet;
+    import org.tartarus.snowball.ext.englishStemmer;
+/**
+ *
+ * @author BIKAA
+ */
+public class queryprocessor {
+    private DB db=new DB();
+    private englishStemmer stemmer=new englishStemmer();
+    public void querying()throws SQLException {
+   Scanner reader = new Scanner(System.in);
+   System.out.println("Search box :");
+   String[] w=(reader.nextLine()).split("\\s+");
+  
+   for(int i=0;i<w.length;i++){
+           stemmer.setCurrent(w[i]);
+                   stemmer.stem();	
+                   w[i] = stemmer.getCurrent(); 
+   //System.out.println(w[i]);
+   }
+  synchronized (db) { 
+       if(w[0].startsWith("\"")){
+       phrasesearching(w);
+      // return w[0];
+       
+       }
+       else if(w.length==1){
+String sqlselect="Select Distinct(thisURL) from indexbahaa where word='"+w[0]+"'";
+ResultSet rs=db.runSql(sqlselect);
+while(rs.next())
+{
+    
+        String s=rs.getString("thisURL");
+        System.out.println(s);
+       // return s;
+}
+ }
+if(w.length==2)
+{
+   String sqlselect2="Select DISTINCT(thisURL) from indexbahaa where word='"+w[0]+"' Union Select DISTINCT(thisURL) from indexbahaa where word='"+w[1]+"'";
+   ResultSet rs=db.runSql(sqlselect2);
+while(rs.next())
+{
+    
+        String s=rs.getString("thisURL");
+        System.out.println(s);
+      //  return s;
+    
+}
+}
+if(w.length>2)
+{ String sqlselect2="Select DISTINCT(thisURL) from indexbahaa where word='"+w[0]+"'";
+
+    for(int i=1;i<w.length;i++)
+    {
+        sqlselect2+=" Union Select DISTINCT(thisURL) from indexbahaa where word='"+w[i]+"'";
+    }
+    ResultSet rs=db.runSql(sqlselect2);
+    while(rs.next())
+{
+    
+        String s=rs.getString("thisURL");
+        System.out.println(s);
+      //  return s;
+}
+ 
+}
+ } 
+    }
+public void phrasesearching(String[] list) throws SQLException{
+String clear1=list[0].replaceAll("\"","");
+String clear2=list[list.length -1].replaceAll("\"","");
+ArrayList<String> ar = new ArrayList<String>();
+ar.add(clear1);
+String[] tags={"high","medium","low"};
+
+
+for (int i=0;i<list.length-2;i++)
+{
+    ar.add(list[i+1]);
+}
+ar.add(clear2);
+for(String s:ar)
+{
+    System.out.println(s);
+}
+/*String check="Select TOP 1 priority from indexbahaa where word='"+ar.get(0)+"'";
+ResultSet rs=db.runSql(check);
+while(rs.next())
+{
+    type=rs.getString("priority");
+    System.out.println(type);
+}*/
+
+    if(list.length==1){
+    String sqlselect="Select DISTINCT(thisURL) from indexbahaa where word='"+ar.get(0)+"'";
+ResultSet rsx=db.runSql(sqlselect);
+while(rsx.next())
+{
+  
+        String s=rsx.getString("thisURL");
+        System.out.println(s);
+        
+    
+}
+    }
+    else if(list.length==2){
+        String type;
+        String check="Select TOP 1 priority from indexbahaa where word='"+ar.get(0)+"'";
+ResultSet rs=db.runSql(check);
+while(rs.next())
+{
+    type=rs.getString("priority");
+    System.out.println(type);
+    
+String[] checks={type};
+if(checks[0].equals("high"))
+{
+        String sql0="Select DISTINCT(thisURL) from indexbahaa where word='"+ar.get(0)+"' and priority='"+tags[0]+"'";
+        ResultSet rs0=db.runSql(sql0);
+       
+        while(rs0.next() )
+{
+        
+        String s=rs0.getString("thisURL");
+  
+          String sql1="Select TOP 1 position from indexbahaa where word='"+ar.get(0)+"' and priority='"+tags[0]+"' and thisURL='"+s+"'";
+        ResultSet rs1=db.runSql(sql1);
+         
+        while(rs1.next() ){
+        int stitle=rs1.getInt("position");
+       
+        //System.out.println(stitle);
+       // System.out.println(s);
+        String sql2="Select DISTINCT(thisURL) from indexbahaa where word='"+ar.get(1)+"' and priority='"+tags[0]+"'";
+         ResultSet rs2=db.runSql(sql2);
+        
+        while(rs2.next() )
+{
+    
+        String s1=rs2.getString("thisURL");
+         String sql3="Select TOP 1 position from indexbahaa where word='"+ar.get(1)+"' and priority='"+tags[0]+"' and thisURL='"+s1+"'";
+        ResultSet rs3=db.runSql(sql3);
+       
+        while(rs3.next())
+        {
+            int stitle1=rs3.getInt("position");
+           
+            
+           int stitle2=stitle1-1;
+           
+            if(stitle==stitle2)
+            {
+                String sql4="Select TOP 1 thisURL from indexbahaa where word='"+ar.get(0)+"' and priority='"+tags[0]+"'and position="+stitle+" "
+                        + "Intersect Select TOP 1 thisURL from indexbahaa where word='"+ar.get(1)+"' and priority='"+tags[0]+"'and position="+stitle1+"";
+                ResultSet rs4=db.runSql(sql4);
+                while(rs4.next())
+                {
+                      String result=rs4.getString("thisURL");
+                      System.out.println(result);
+                      //return result;
+                      
+                }
+            }
+            
+            else{System.out.println("No results for word");}
+        break;   
+        }
+        break;
+        }
+        break;
+}
+        break;
+}
+}  
+else if(checks[0].equals("low"))
+{
+      String sql0="Select DISTINCT(thisURL) from indexbahaa where word='"+ar.get(0)+"' and priority='"+tags[2]+"'";
+        ResultSet rs0=db.runSql(sql0);
+        while(rs0.next() )
+{
+        
+        String s=rs0.getString("thisURL");
+  
+          String sql1="Select TOP 1 position from indexbahaa where word='"+ar.get(0)+"' and priority='"+tags[2]+"' and thisURL='"+s+"'";
+        ResultSet rs1=db.runSql(sql1);
+         
+        while(rs1.next() ){
+        int stitle=rs1.getInt("position");
+       
+        //System.out.println(stitle);
+       // System.out.println(s);
+        String sql2="Select DISTINCT(thisURL) from indexbahaa where word='"+ar.get(1)+"' and priority='"+tags[2]+"'";
+         ResultSet rs2=db.runSql(sql2);
+        
+        while(rs2.next() )
+{
+    
+        String s1=rs2.getString("thisURL");
+         String sql3="Select TOP 1 position from indexbahaa where word='"+ar.get(1)+"' and priority='"+tags[2]+"' and thisURL='"+s1+"'";
+        ResultSet rs3=db.runSql(sql3);
+       
+        while(rs3.next())
+        {
+            int stitle1=rs3.getInt("position");
+           
+            
+           int stitle2=stitle1-1;
+           
+            if(stitle==stitle2)
+            {
+                String sql4="Select TOP 1 thisURL from indexbahaa where word='"+ar.get(0)+"' and priority='"+tags[2]+"'and position="+stitle+" "
+                        + "Intersect Select TOP 1 thisURL from indexbahaa where word='"+ar.get(1)+"' and priority='"+tags[2]+"'and position="+stitle1+"";
+                ResultSet rs4=db.runSql(sql4);
+                while(rs4.next())
+                {
+                      String result=rs4.getString("thisURL");
+                      System.out.println(result);
+                      
+                      
+                      
+                }
+            }
+            
+            else{System.out.println("No results for word");}
+        break;   
+        }
+        break;
+}
+break;
+}
+        break;
+    }     
+}
+else if(checks[0].equals("medium"))
+{
+          String sql0="Select DISTINCT(thisURL) from indexbahaa where word='"+ar.get(0)+"' and priority='"+tags[2]+"'";
+        ResultSet rs0=db.runSql(sql0);
+        while(rs0.next() )
+{
+        
+        String s=rs0.getString("thisURL");
+  
+          String sql1="Select TOP 1 position from indexbahaa where word='"+ar.get(0)+"' and priority='"+tags[2]+"' and thisURL='"+s+"'";
+        ResultSet rs1=db.runSql(sql1);
+         
+        while(rs1.next() ){
+        int stitle=rs1.getInt("position");
+       
+        //System.out.println(stitle);
+       // System.out.println(s);
+        String sql2="Select DISTINCT(thisURL) from indexbahaa where word='"+ar.get(1)+"' and priority='"+tags[2]+"'";
+         ResultSet rs2=db.runSql(sql2);
+        
+        while(rs2.next() )
+{
+    
+        String s1=rs2.getString("thisURL");
+         String sql3="Select TOP 1 position from indexbahaa where word='"+ar.get(1)+"' and priority='"+tags[2]+"' and thisURL='"+s1+"'";
+        ResultSet rs3=db.runSql(sql3);
+       
+        while(rs3.next())
+        {
+            int stitle1=rs3.getInt("position");
+           
+            
+           int stitle2=stitle1-1;
+           
+            if(stitle==stitle2)
+            {
+                String sql4="Select TOP 1 thisURL from indexbahaa where word='"+ar.get(0)+"' and priority='"+tags[2]+"'and position="+stitle+" "
+                        + "Intersect Select TOP 1 thisURL from indexbahaa where word='"+ar.get(1)+"' and priority='"+tags[2]+"'and position="+stitle1+"";
+                ResultSet rs4=db.runSql(sql4);
+                while(rs4.next())
+                {
+                      String result=rs4.getString("thisURL");
+                      System.out.println(result);
+                      
+                     
+                }
+            }
+            
+            else{System.out.println("No results for words");}
+        break;   
+        }
+        break;
+}
+break;
+}
+        break;
+    }
+}
+break;
+}
+    }
+    else if(list.length>2)
+    {         String type;
+        String check="Select TOP 1 priority from indexbahaa where word='"+ar.get(0)+"'";
+ResultSet rs=db.runSql(check);
+while(rs.next())
+{
+    type=rs.getString("priority");
+    System.out.println(type);
+    
+String[] checks={type};
+if(checks[0].equals("high"))
+{
+    ArrayList<String> sameURL=new ArrayList<String>();
+       int posi,posi1,posi2;
+        String URL,URL1,URL2;
+        ArrayList<Integer> position=new ArrayList<Integer>();
+        for(int i=0;i<=list.length-3;i++)
+        {
+             String sql0="Select thisURL,position from indexbahaa where word='"+ar.get(i)+"' and priority='"+tags[0]+"'";
+             ResultSet rsMulti=db.runSql(sql0);
+             String sql01="Select thisURL,position from indexbahaa where word='"+ar.get(i+1)+"' and priority='"+tags[0]+"'";
+             ResultSet rsMulti1=db.runSql(sql01);
+             String sql02="Select thisURL,position from indexbahaa where word='"+ar.get(i+2)+"' and priority='"+tags[0]+"'";
+             ResultSet rsMulti2=db.runSql(sql02);
+             while(rsMulti.next() && rsMulti1.next() && rsMulti2.next())
+             {
+                 
+                 posi=rsMulti.getInt("position");
+                 posi1=rsMulti1.getInt("position");
+                 posi2=rsMulti2.getInt("position");
+                 URL=rsMulti.getString("thisURL");
+                 URL1=rsMulti1.getString("thisURL");
+                 URL2=rsMulti2.getString("thisURL");
+                 if(posi+1==posi1){
+                     if(posi1+1==posi2){
+                     if(URL.equals(URL1)){
+                         if(URL1.equals(URL2)){
+                             sameURL.add(URL);
+                             
+                         }
+                     }
+                     }
+                 }
+                // sameURL.add(URL);
+                 
+             }
+           
+              for(String s:sameURL)
+                {
+                    System.out.println(s);
+                    //return s;
+                    
+                }
+        }
+       /* ArrayList<String> checksameURL=new ArrayList<String>();
+        for(int i=0;i<list.length;i++)
+        {
+            for(int j=0;j<list.length;j++)
+            if(sameURL.get(i)==sameURL.get(j))
+            { 
+                checksameURL.add(sameURL.get(i));
+            }
+        }*/
+
+}
+if(checks[0].equals("low"))
+{
+    ArrayList<String> sameURL=new ArrayList<String>();
+       int posi,posi1,posi2;
+        String URL,URL1,URL2;
+        ArrayList<Integer> position=new ArrayList<Integer>();
+        for(int i=0;i<=list.length-3;i++)
+        {
+             String sql0="Select thisURL,position from indexbahaa where word='"+ar.get(i)+"' and priority='"+tags[2]+"'";
+             ResultSet rsMulti=db.runSql(sql0);
+             String sql01="Select thisURL,position from indexbahaa where word='"+ar.get(i+1)+"' and priority='"+tags[2]+"'";
+             ResultSet rsMulti1=db.runSql(sql01);
+             String sql02="Select thisURL,position from indexbahaa where word='"+ar.get(i+2)+"' and priority='"+tags[2]+"'";
+             ResultSet rsMulti2=db.runSql(sql02);
+             while(rsMulti.next() && rsMulti1.next() && rsMulti2.next())
+             {
+                 
+                 posi=rsMulti.getInt("position");
+                 posi1=rsMulti1.getInt("position");
+                 posi2=rsMulti2.getInt("position");
+                 URL=rsMulti.getString("thisURL");
+                 URL1=rsMulti1.getString("thisURL");
+                 URL2=rsMulti2.getString("thisURL");
+                 if(posi+1==posi1){
+                     if(posi1+1==posi2){
+                     if(URL.equals(URL1)){
+                         if(URL1.equals(URL2)){
+                             sameURL.add(URL);
+                             
+                         }
+                     }
+                     }
+                 }
+                // sameURL.add(URL);
+                 
+             }
+           
+              for(String s:sameURL)
+                {
+                    System.out.println(s);
+                    //return s;
+                   
+                }
+        }
+       /* ArrayList<String> checksameURL=new ArrayList<String>();
+        for(int i=0;i<list.length;i++)
+        {
+            for(int j=0;j<list.length;j++)
+            if(sameURL.get(i)==sameURL.get(j))
+            { 
+                checksameURL.add(sameURL.get(i));
+            }
+        }*/
+
+}
+if(checks[0].equals("medium"))
+{
+    ArrayList<String> sameURL=new ArrayList<String>();
+       int posi,posi1,posi2;
+        String URL,URL1,URL2;
+        ArrayList<Integer> position=new ArrayList<Integer>();
+        for(int i=0;i<=list.length-3;i++)
+        {
+             String sql0="Select thisURL,position from indexbahaa where word='"+ar.get(i)+"' and priority='"+tags[1]+"'";
+             ResultSet rsMulti=db.runSql(sql0);
+             String sql01="Select thisURL,position from indexbahaa where word='"+ar.get(i+1)+"' and priority='"+tags[1]+"'";
+             ResultSet rsMulti1=db.runSql(sql01);
+             String sql02="Select thisURL,position from indexbahaa where word='"+ar.get(i+2)+"' and priority='"+tags[1]+"'";
+             ResultSet rsMulti2=db.runSql(sql02);
+             while(rsMulti.next() && rsMulti1.next() && rsMulti2.next())
+             {
+                 
+                 posi=rsMulti.getInt("position");
+                 posi1=rsMulti1.getInt("position");
+                 posi2=rsMulti2.getInt("position");
+                 URL=rsMulti.getString("thisURL");
+                 URL1=rsMulti1.getString("thisURL");
+                 URL2=rsMulti2.getString("thisURL");
+                 if(posi+1==posi1){
+                     if(posi1+1==posi2){
+                     if(URL.equals(URL1)){
+                         if(URL1.equals(URL2)){
+                             sameURL.add(URL);
+                             
+                         }
+                     }
+                     }
+                 }
+                // sameURL.add(URL);
+                 
+             }
+           
+              for(String s:sameURL)
+                {
+                    System.out.println(s);
+                    //return s;
+                }
+        }
+       /* ArrayList<String> checksameURL=new ArrayList<String>();
+        for(int i=0;i<list.length;i++)
+        {
+            for(int j=0;j<list.length;j++)
+            if(sameURL.get(i)==sameURL.get(j))
+            { 
+                checksameURL.add(sameURL.get(i));
+            }
+        }*/
+
+}
+    }
+}
+   
+}
+
+
+    
+
+
+    
+    public static void main(String[] args)throws SQLException{
+    queryprocessor x=new queryprocessor();
+    x.querying();
+    
+    
+    }
+}
