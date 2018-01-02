@@ -1,0 +1,75 @@
+import java.io.File;
+import java.io.IOException;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Scanner;
+
+public class Crawler {
+
+	private DB db;
+	private static final int CRAWLER_THREADS = 15;
+	private ArrayList<String> URLs;
+
+	public Crawler() throws SQLException, IOException {
+		db = new DB();
+		URLs = new ArrayList<String>();
+		this.FillURLs();
+	}
+
+	/**
+	 * This method reads a file containing the URLs which are the seed set of
+	 * the Crawler Object, inserts them into a list of Object ArrayList.
+	 * 
+	 * @param null
+	 * @return null
+	 * @throws IOException
+	 * @throws SQLException
+	 */
+	private void FillURLs() throws IOException, SQLException {
+		File f = new File("URLs.txt");
+		Scanner s = new Scanner(f);
+		while (s.hasNextLine()) {
+			String link = s.nextLine();
+			URLs.add(link);
+		}
+		s.close();
+	}
+
+	/**
+	 * This method cleans the database from previous runs when interrupts could
+	 * possibly occur. It sets the isTaken of already crawled pages to 1, and
+	 * resets the isTaken of unsuccessfully crawled pages to 0.
+	 * 
+	 * @throws SQLException
+	 */
+	private void CleanDB() throws SQLException {
+		String sql = "UPDATE CRAWLER SET isTaken = '1' where isCrawled = '1'";
+		db.runSql2(sql);
+		sql = "UPDATE CRAWLER SET isTaken = '0' where isCrawled = '0'";
+		db.runSql2(sql);
+
+	}
+
+	/**
+	 * This main method is the entry point of the program. It initializes a
+	 * multi-thread Crawler Object crawler Object that starts crawling the web.
+	 * It initializes an Indexer Object to start indexing the web pages crawled
+	 * by the crawling threads.
+	 * 
+	 * @param args
+	 * @throws SQLException
+	 * @throws IOException
+	 */
+
+	public static void main(String[] args) throws SQLException, IOException {
+		/*Crawler crawler = new Crawler();
+		crawler.CleanDB();
+		for (int i = 0; i < CRAWLER_THREADS; i++) {
+			Thread t = new Thread(new CrawlerThread(crawler.db, crawler.URLs.get(i)));
+			t.setName("" + i + "");
+			t.start();
+		}*/
+		Indexer indexer = new Indexer();
+		indexer.IndexPages();
+	}
+}
