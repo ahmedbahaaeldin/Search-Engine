@@ -1,0 +1,124 @@
+
+// Import required java libraries
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Scanner;
+
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+// Extend HttpServlet class
+@SuppressWarnings("serial")
+public class WebInterface extends HttpServlet {
+
+	public void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		// Set response content type
+		response.setContentType("text/html");
+		PrintWriter out = response.getWriter();
+		String searchString = request.getParameter("searchString").toLowerCase();
+		String[] queryWords = searchString.split("\\s+");
+		QueryProcessor qp = new QueryProcessor();
+		Ranker r = new Ranker();
+		DB db = new DB();
+		ArrayList<String> searchResults = null;
+		try {
+			qp.SearchQuery(searchString);
+			searchResults = r.RankPages();
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+		String results = "";
+		String title = "";
+		String content = "";
+		for (int i = 0; i < 10; i++) {
+			String sqlSelect = "SELECT Title, Content from INTERFACE where URL = '" + searchResults.get(i) + "' LIMIT 1";
+			try {
+				ResultSet rs = db.runSql(sqlSelect);
+				if (rs.next()) {
+					title = rs.getString("Title");
+					content = rs.getString("Content");
+					content = content.substring(2000);
+				}
+			} catch (SQLException e) {
+				e.printStackTrace();
+			}
+			
+			String snippet = GetSnippet(content, searchString);
+			String link = "";
+			
+			// Highlighting the search words in the title and snippet
+			for (String s : queryWords) {
+				title = title.replaceAll(s, "<b>" + s + "</b>");
+				title = title.replaceAll(s.toUpperCase(), "<b>" + s.toUpperCase() + "</b>");
+				snippet = snippet.replaceAll(s, "<b>" + s + "</b>");
+				snippet = snippet.replaceAll(s.toUpperCase(), "<b>" + s.toUpperCase() + "</b>");
+				link = searchResults.get(i).replaceAll(s, "<b>" + s + "</b>");
+				link = link.replaceAll(s.toUpperCase(), "<b>" + s.toUpperCase() + "</b>");
+			}
+
+			results += "<a href = \"" + link
+					+ "\" STYLE = \"text-decoration: none\"><font face = \"Arial\" size = \"4\" color = \"blue\">"
+					+ title + "</font></a><br>";
+			results += "<font face = \"Arial\" size = \"3\" color = \"green\">" + link + "</font><br>";
+			results += snippet + "<br>";
+		}
+		String docType = "<!doctype html public \"-//w3c//dtd html 4.0 " + "transitional//en\">\n";
+		out.println(docType + "<html>\n" 
+				+ "<head><title> Search Results </title></head>\n"
+				+ "<body bgcolor=\"#f0f0f0\">\n" 
+				+ "<h1 align=\"center\" style=\"color:blue;\"> Search Results of \"" + searchString 
+				+ "\"</h1>\n" + "<HR width=\"50%\" align=\"center\">\n" + "<p align=\"left\">" + results + "</p><br>\n" 
+				+ "</body></html>");
+	}
+
+	private String GetSnippet(String content, String searchString) throws FileNotFoundException {
+		int index = 0;
+		int start = 0;
+		int end = 0;
+		String[] queryWords = searchString.split("\\s+");
+		if (content.contains(searchString)) {
+			index = content.indexOf(searchString);
+		} else {
+			searchString = Format(searchString);
+			index = content.indexOf(queryWords[0]);
+		}
+		if (index < 70) {
+			start = 0;
+		} else {
+			start = index - 70;
+		}
+		if (index > content.length() - 70) {
+			end = content.length();
+		} else {
+			end = index + 70;
+		}
+		String snippet = "<font face = \"Arial\" size = \"2\" color = \"black\"> ..." + content.substring(start, end) + "...</font> <br>";
+		return snippet;
+	}
+
+	// Method to handle POST method request.
+	public void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		doGet(request, response);
+	}
+
+	public String Format(String text) throws FileNotFoundException {
+		File f = new File("C:\\xampp\\tomcat\\webapps\\ROOT\\WEB-INF\\WordsToExclude.txt");
+		ArrayList<String> stopWords = new ArrayList<String>();
+		Scanner s = new Scanner(f);
+		while (s.hasNext()) {
+			stopWords.add(s.nextLine());
+		}
+		s.close();
+		for (int i = 0; i < stopWords.size(); i++) {
+			text = text.replaceAll(" " + stopWords.get(i) + " ", " ");
+		}
+		return text;
+	}
+}
