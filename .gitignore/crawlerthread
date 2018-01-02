@@ -1,0 +1,311 @@
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.HashSet;
+
+import org.jsoup.Connection;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+
+public class CrawlerThread implements Runnable {
+	private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/535.1 (KHTML, like Gecko) Chrome/13.0.782.112 Safari/535.1";
+	private String URL;
+	private DB db;
+
+	public CrawlerThread(DB database, String URL) {
+		this.URL = URL;
+		db = database;
+	}
+
+	public void run() {
+		try {
+			HashSet<String> set = new HashSet<String>();
+			InsertFirstPage(URL);
+			processPage(URL, true, set);
+		} catch (SQLException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	/**
+	 * This method connects to the webpage with URL, attempts to establish a
+	 * connection and get an HTML document from that webpage.
+	 * 
+	 * @param URL
+	 *            a URL to connect to.
+	 * @return the HTML document of the webpage. If the webpage is not an HTML
+	 *         document, or if the webpage has no response (404 Not Found), it
+	 *         is automatically deleted from the database.
+	 * @throws IOException
+	 *             if failed to establish a connection.
+	 * @throws SQLException
+	 */
+	private Document GetConnectiontoURL(String URL) throws IOException, SQLException {
+		Connection conn = Jsoup.connect(URL).userAgent(USER_AGENT);
+		Document doc = null;
+		try {
+			doc = conn.get();
+			if (!conn.response().contentType().contains("text/html")) {
+				DeletefromDB(URL);
+				return null;
+			}
+		} catch (Exception e) {
+			// DeletefromDB(URL);
+			return null;
+		}
+		return doc;
+	}
+
+	/**
+	 * This method crawls every link in the database in a recursive fashion. It
+	 * gets all links of the HTML document and checks whether this link should
+	 * be excluded according to the robot exclusion standard. If not, the link
+	 * is inserted into the Crawler table. The method updates the crawling
+	 * status of the current URL if the crawling is successful. Otherwise, it
+	 * crawls the next link in the database.
+	 * 
+	 * @param URL
+	 * @throws SQLException
+	 * @throws IOException
+	 */
+	private void processPage(String URL, boolean firstPage, HashSet<String> set) throws SQLException, IOException {
+		if (URL == null)
+			return;
+		/*
+		 * If the current URL hasn't been crawled before, This is important for
+		 * the first-time crawl.
+		 */
+		if (!isCrawled(URL) && !firstPage) {
+			Document doc = GetConnectiontoURL(URL);
+			if (doc != null) {
+				Elements links = doc.select("a[href]");
+				ArrayList<String> excludedList = ReadRobotFile(URL);
+				for (Element link : links) {
+					String linkURL = link.attr("abs:href");
+					if (!linkURL.equals("") && !linkURL.contains("#") && !isExcluded(linkURL, excludedList)) {
+						set.add(linkURL);
+					}
+				}
+				InsertSet(set);
+				set.clear();
+				UpdateDB(URL);
+			} else {
+				DeletefromDB(URL);
+			}
+		}
+		processPage(getNextLink(), false, set);
+	}
+
+	/**
+	 * This method inserts the seed set links into the Crawler Table. If the URL
+	 * already exists, it skips inserting that URL.
+	 * 
+	 * @param URL
+	 *            a webpage to be inserted into the database and crawled again
+	 *            later.
+	 * @throws SQLException
+	 */
+	public void InsertFirstPage(String URL) {
+		synchronized (db) {
+			try {
+				String sql = "SELECT * from CRAWLER WHERE URL = '" + URL + "' LIMIT 1";
+				ResultSet rs = db.runSql(sql);
+				if (rs.next())
+					return;
+				sql = "INSERT INTO  db.crawler (URL) VALUES ('" + URL + "')";
+				db.runSql2(sql);
+			} catch (SQLException e) {
+				return;
+			}
+		}
+	}
+
+	/**
+	 * This method inserts a distinct set of URLs into the CRAWLER Table.
+	 * 
+	 * @param set
+	 *            URLs to be inserted into the CRAWLER table.
+	 */
+	public void InsertSet(HashSet<String> set) {
+		synchronized (db) {
+			String insertQuery = "INSERT INTO db.CRAWLER (URL) VALUES";
+			String delimiter = "";
+			try {
+				String sql = "SELECT URL FROM CRAWLER";
+				ResultSet rs = db.runSql(sql);
+				while (rs.next()) {
+					String link = rs.getString("URL");
+					if (set.contains(link)) {
+						String sqlSelect = "SELECT inLinks from db.Crawler where URL = '" + link + "' LIMIT 1";
+						ResultSet resultCount = db.runSql(sqlSelect);
+						if (resultCount.next()) {
+							int currentCount = Integer.parseInt(resultCount.getString("inLinks"));
+							currentCount = currentCount + 1;
+							String sqlUpdate = "UPDATE CRAWLER SET inLinks = '" + currentCount + "' where URL = '" + link
+									+ "' LIMIT 1";
+							db.runSql2(sqlUpdate);
+						}
+						set.remove(link);
+					}
+				}
+				for (String item : set) {
+					insertQuery += delimiter + " ('" + item + "')";
+					delimiter = ",";
+				}
+				db.runSql2(insertQuery);
+			} catch (SQLException e) {
+				return;
+			}
+		}
+	}
+
+	/**
+	 * This method gets the next webpage to be crawled in order. It searches the
+	 * crawler table looking for uncrawled webpages.
+	 * 
+	 * @return the first uncrawled webpage in the crawler database.
+	 * @throws SQLException
+	 */
+	public String getNextLink() throws SQLException {
+		synchronized (db) {
+			String sql = "SELECT * FROM CRAWLER WHERE isCrawled = '0' AND isTaken = '0' LIMIT 1";
+			ResultSet rs = db.runSql(sql);
+
+			String nextURL = null;
+			if (rs.next()) {
+				nextURL = rs.getString("URL");
+			}
+
+			System.out.println("Thread " + Thread.currentThread().getName() + " is crawling URL = " + nextURL);
+			String sql2 = "UPDATE CRAWLER SET isTaken = '1' where isCrawled = '0' and isTaken = '0' LIMIT 1";
+			db.updateSql(sql2);
+			return nextURL;
+
+		}
+
+	}
+
+	/**
+	 *
+	 * A database oriented method that interfaces the Crawler Object with the
+	 * database Object. This method updates the crawling status of a record with
+	 * URL in the Crawler Table.
+	 * 
+	 * @param URL
+	 *            a URL to update in the Crawler table.
+	 * @throws SQLException
+	 */
+	public void UpdateDB(String URL) throws SQLException {
+		synchronized (db) {
+			String sql = "UPDATE CRAWLER SET isCrawled = '1' WHERE URL = '" + URL + "'";
+			db.runSql2(sql);
+
+			String sql2 = "SELECT COUNT(*) FROM CRAWLER WHERE isCrawled = '1'";
+			ResultSet rs = db.runSql(sql2);
+			rs.next();
+			String count = rs.getString(1);
+
+			System.out.println("Thread " + Thread.currentThread().getName() + ": Crawled " + count + " pages, " + URL);
+		}
+	}
+
+	/**
+	 * A database oriented method that interfaces the Crawler Object with the
+	 * database Object. This methods deletes a record with URL from the Crawler
+	 * Table.
+	 * 
+	 * @param URL
+	 *            a URL to delete from the Crawler Table.
+	 * @throws SQLException
+	 */
+	public void DeletefromDB(String URL) throws SQLException {
+		synchronized (db) {
+			String sql = "DELETE FROM CRAWLER WHERE URL = '" + URL + "'";
+			db.runSql2(sql);
+		}
+	}
+
+	/**
+	 * A database oriented method that interfaces the Crawler Object with the
+	 * database Object. This method returns true if the webpage has already been
+	 * crawled, and false otherwise
+	 * 
+	 * @param URL
+	 *            a webpage to search for in the Crawler table and return its
+	 *            crawling status.
+	 * @return true if the webpage has already been crawled, and false otherwise
+	 * @throws SQLException
+	 */
+	public boolean isCrawled(String URL) throws SQLException {
+		String sql = "SELECT * from CRAWLER where URL = '" + URL + "' AND isCrawled = '1' LIMIT 1";
+		return (db.runSql(sql).next());
+	}
+
+	/**
+	 * This method reads the robot file and returns a string of excluded links
+	 * for that specific URL.
+	 * 
+	 * @param URL
+	 * @return a string of excluded links for a specific URL
+	 */
+	private ArrayList<String> ReadRobotFile(String URL) {
+		/*
+		 * The URL is in the form https://somewebsite.com/somestuff/.. The robot
+		 * file is in https://somewebsite.com/robot.txt
+		 */
+		try {
+			URL = URL.replace("http://", "");
+			URL = URL.replace("www.", "");
+			String robotFileURL = "http://" + URL.substring(0, URL.indexOf('/') + 1) + "robots.txt";
+			String line = null;
+			boolean isAccessible = false;
+			ArrayList<String> excludedLinks = new ArrayList<String>();
+			BufferedReader reader = new BufferedReader(new InputStreamReader(new URL(robotFileURL).openStream()));
+			while ((line = reader.readLine()) != null) {
+				if (line.equals("User-agent: *")) {
+					isAccessible = true;
+				}
+				if (line.matches("User-agent: [^*]+")) {
+					isAccessible = false;
+				}
+				if (isAccessible && line.contains("Disallow:")) {
+					int start = line.indexOf('/');
+					int end = line.lastIndexOf('/');
+					excludedLinks.add(line.substring(start, end + 1));
+				}
+			}
+			reader.close();
+			return excludedLinks;
+		} catch (Exception e) {
+			return null;
+		}
+	}
+
+	/**
+	 * This method checks whether the URL belongs to the list of excluded URLs
+	 * according to the robot exclusion standard or not.
+	 * 
+	 * @param URL
+	 *            the URL to be checked against.
+	 * @return true if the URL should be excluded and not crawled, and false
+	 *         otherwise.
+	 */
+	public boolean isExcluded(String URL, ArrayList<String> excludedList) {
+		if (excludedList == null)
+			return false;
+		for (int i = 0; i < excludedList.size(); i++) {
+			if (URL.contains(excludedList.get(i))) {
+				return true;
+			}
+		}
+		return false;
+	}
+}
